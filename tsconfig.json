@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "outDir": "dist",
+    "strict": true,
+    "useUnknownInCatchVariables": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    // for typegoose
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src/**/*", "src/**/*.json"]
+}

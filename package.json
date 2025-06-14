@@ -1,0 +1,28 @@
+{
+  "name": "lifi-take-home",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build": "tsc",
+    "postbuild": "echo todo",
+    "test": "echo test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^22.15.31",
+    "esmock": "^2.7.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@typegoose/typegoose": "~12.16.0",
+    "ethers": "^5.8.0",
+    "lifi-contract-typings": "github:lifinance/lifi-contract-types",
+    "mongoose": "~8.15.0"
+  }
+}

@@ -1,4 +1,15 @@
-async function retryWithBackoff<T>(
+type RetryOptions = {
+  retries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  backoffFactor?: number;
+};
+
+/**
+ * Retry a function `fn` with an exponential backoff+jitter
+ * based on different options.
+ */
+const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
   options: {
     retries?: number;
@@ -6,7 +17,7 @@ async function retryWithBackoff<T>(
     maxDelayMs?: number;
     backoffFactor?: number;
   } = {}
-): Promise<T> {
+): Promise<T> => {
   const {
     retries = 3,
     initialDelayMs = 100,
@@ -21,44 +32,34 @@ async function retryWithBackoff<T>(
       return await fn();
     } catch (error) {
       lastError = error;
-      if (attempt === retries) break;
 
-      // Calculate delay with exponential backoff
+      // add delay with exponential backoff and jitter
       const delay = Math.min(
         initialDelayMs * Math.pow(backoffFactor, attempt - 1),
         maxDelayMs
       );
-      // Add jitter to prevent thundering herd
-      // Adds a small random delay (10% of the calculated delay) to prevent simultaneous retries in distributed systems.
-      const jitter = Math.random() * delay * 0.1;
+      const jitter = Math.random() * 0.1 * delay;
       await new Promise((resolve) => setTimeout(resolve, delay + jitter));
     }
   }
 
   throw lastError;
+};
+
+/**
+ * Function wrapper to make said function retriable. Suitable for IO calls, such as
+ * RPC requests, API calls or DB queries.
+ * @param fn - Function to retry
+ * @param options - Optional retry parameters
+ * @returns - Promise resolving to the return value of the function
+ */
+function makeFuncRetriable<T extends (...args: any[]) => Promise<any>>(
+  fn: T,
+  options: RetryOptions = {}
+): T {
+  return (async (...args: any[]) => {
+    return retryWithBackoff(() => fn(...args), options);
+  }) as T;
 }
 
-// Example usage with an API call
-async function example() {
-  const apiCall = async () => {
-    // Simulate an API call that might fail
-    if (Math.random() < 0.7) throw new Error("API call failed");
-    return { data: "Success" };
-  };
-
-  try {
-    const result = await retryWithBackoff(apiCall, {
-      retries: 4,
-      initialDelayMs: 200,
-      maxDelayMs: 2000,
-      backoffFactor: 2,
-    });
-    // console.log("Result:", result);
-  } catch (error) {
-    // console.error("All retries failed:", error);
-  }
-}
-
-// example();
-
-export { retryWithBackoff };
+export { retryWithBackoff, makeFuncRetriable, type RetryOptions };

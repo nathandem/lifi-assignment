@@ -2,14 +2,15 @@ import { ethers } from "ethers";
 import { FeeCollector__factory } from "lifi-contract-typings";
 import { BlockTag } from "@ethersproject/abstract-provider";
 
-import env from "./env.js";
+import config from "./config.js";
+import { makeFuncRetriable } from "./retry.js";
 
 const provider = new ethers.providers.JsonRpcProvider({
-  url: env.rpcUrl,
+  url: config.rpcUrl,
   timeout: 10_000, // 10s
 });
 const feeCollector = new ethers.Contract(
-  env.feeCollectorContractAddress,
+  config.feeCollectorContractAddress,
   FeeCollector__factory.createInterface(),
   provider
 );
@@ -21,20 +22,23 @@ const feeCollector = new ethers.Contract(
  * @returns A promise resolving into an array of `FeesCollected` events within the specified block range.
  *
  * @remarks
- * Just like its underlying eth_getLogs RPC method, queryFilter is inclusive of
+ * Just like its underlying `eth_getLogs` RPC method, queryFilter is inclusive of
  * both fromBlock and toBlock.
  */
-const loadFeeCollectorEvents = (
+const _loadFeesCollectedEvents = async (
   fromBlock: BlockTag,
   toBlock: BlockTag
 ): Promise<ethers.Event[]> => {
-  // TODO: put retry logic and error handling (log proper error)
   const filter = feeCollector.filters.FeesCollected();
-  return feeCollector.queryFilter(filter, fromBlock, toBlock);
+  return await feeCollector.queryFilter(filter, fromBlock, toBlock);
 };
 
-const getLatestBlockNumber = async (): Promise<number> => {
+const _getLatestBlockNumber = async (): Promise<number> => {
   return await provider.getBlockNumber();
 };
 
-export { loadFeeCollectorEvents, getLatestBlockNumber };
+// retriable versions of RPC calls
+const loadFeesCollectedEvents = makeFuncRetriable(_loadFeesCollectedEvents);
+const getLatestBlockNumber = makeFuncRetriable(_getLatestBlockNumber);
+
+export { loadFeesCollectedEvents, getLatestBlockNumber };

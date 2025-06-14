@@ -1,82 +1,81 @@
 import { BigNumber, type Event } from "ethers";
 
-import { type ParsedFeeCollectedEvent } from "../types.js";
-import { loadFeeCollectorEvents, getLatestBlockNumber } from "../rpc.js";
-import { saveFeeCollectedInDb } from "../db/Fee.js";
+import { type ParsedFeesCollectedEvent } from "../types.js";
+import { loadFeesCollectedEvents, getLatestBlockNumber } from "../rpc.js";
+import { saveFeesCollectedInDb } from "../db/Fee.js";
 import { getLastBlockInDb, setLastBlockInDb } from "../db/LastBlock.js";
 import { logger } from "../logger.js";
-
-const OLDEST_BLOCK = 70000000;
+import config from "../config.js";
 
 /**
- * Takes a list of raw events and parses them into `ParsedFeeCollectedEvent`.
+ * Takes a list of raw events and parses them into `ParsedFeesCollectedEvent`.
  * @param events - Array of raw `FeesCollected` events to be parsed.
  * @returns Array of parsed fee collected events with some metadata.
  *
  * @remarks
  * Parsing isn't defensive (no validation) as EVM events are highly
- * constrained, deterministic.
+ * deterministic.
  */
 const parseFeeCollectorEvents = (
   events: Event[]
-): ParsedFeeCollectedEvent[] => {
+): ParsedFeesCollectedEvent[] => {
   return events.map((event) => {
-    const feesCollected: ParsedFeeCollectedEvent = {
-      txHash: event.transactionHash,
+    const feesCollected: ParsedFeesCollectedEvent = {
       blockNb: event.blockNumber,
-      token: event.args?._token,
-      integrator: event.args?._integrator,
-      integratorFee: BigNumber.from(event.args?._integratorFee).toString(),
-      lifiFee: BigNumber.from(event.args?._lifiFee).toString(),
+      txHash: event.transactionHash,
+      logIdx: event.logIndex,
+      token: event.args?._token as string,
+      integrator: event.args?._integrator as string,
+      integratorFee: (event.args?._integratorFee as BigNumber).toString(),
+      lifiFee: (event.args?._lifiFee as BigNumber).toString(),
     };
     return feesCollected;
   });
 };
 
-// Could be made parallel to increase speed, but reliability preferred
-const scrapFeeCollected = async (): Promise<void> => {
-  const dbLastestBlock = (await getLastBlockInDb()) || OLDEST_BLOCK - 1;
+/**
+ * Scrap (fetch, parse and store in DB) `FeesCollected` events from the `FeeCollector`
+ * contract. Job proceeds where the last valid block it left of.
+ *
+ * @remarks
+ * Could be made parallel to increase speed, but reliability preferred.
+ */
+const scrapFeesCollected = async (): Promise<void> => {
+  const dbLastestBlock =
+    (await getLastBlockInDb()) || Math.max(config.startBlock - 1, 0);
 
-  // we might be missing a few blocks because of this by the time the job is done but okay, as not a real-time service
+  // We might be missing a few blocks because of this by the time the job is done but okay, as not a real-time service
   // alternatively, we can fetch the latest block number in every loop pass
   const blockchainLatestBlock = await getLatestBlockNumber();
 
-  const BATCH_SIZE = 1000; // avg. 2.1 sec per block (so close to 1h worth of progress w/ 1000 blocks)
-  let fromBlock = Math.min(dbLastestBlock + 1, blockchainLatestBlock);
-  let toBlock = Math.min(fromBlock + BATCH_SIZE, blockchainLatestBlock);
+  const BATCH_SIZE = config.batchSize - 1; // minus 1 because inclusive on both side would mean a batch size of N+1
+  let fromBlock = dbLastestBlock + 1;
 
-  // TODO: ensure not missing any block
-  while (fromBlock < blockchainLatestBlock) {
-    // TMP
-    logger.debug(`fromBlock: ${fromBlock}`);
-    logger.debug(`toBlock: ${toBlock}`);
+  while (fromBlock <= blockchainLatestBlock) {
+    const toBlock = Math.min(fromBlock + BATCH_SIZE - 1, blockchainLatestBlock);
 
     try {
-      // note: follow ETL pattern, though these 3 simple operations could be fused into one
-      const events = await loadFeeCollectorEvents(fromBlock, toBlock);
-      console.log(events);
-      const parsedEvents = parseFeeCollectorEvents(events);
-      console.log(parsedEvents);
-      await saveFeeCollectedInDb(parsedEvents);
-      console.log("after saving feeCollected events in DB");
+      // follow ETL pattern
+      const events = await loadFeesCollectedEvents(fromBlock, toBlock);
+      if (events) {
+        const parsedEvents = parseFeeCollectorEvents(events);
+        await saveFeesCollectedInDb(parsedEvents);
+      }
 
-      fromBlock = Math.min(toBlock + 1, blockchainLatestBlock);
-      toBlock = Math.min(fromBlock + BATCH_SIZE, blockchainLatestBlock);
+      fromBlock = toBlock + 1;
     } catch (err) {
-      // TMP
-      await setLastBlockInDb(fromBlock);
+      await setLastBlockInDb(Math.max(fromBlock - 1, config.startBlock));
       throw err;
     }
   }
 
-  // TMP
-  logger.debug(`blockchainLatestBlock: ${blockchainLatestBlock}`);
-
   await setLastBlockInDb(blockchainLatestBlock);
 
-  logger.debug(
-    `Scrapped FeeCollected events from ${dbLastestBlock} to ${blockchainLatestBlock}`
+  logger.info(
+    `Scrapped FeesCollected events from ${
+      dbLastestBlock + 1
+    } to ${blockchainLatestBlock}`
   );
 };
 
-export default scrapFeeCollected;
+export { scrapFeesCollected };

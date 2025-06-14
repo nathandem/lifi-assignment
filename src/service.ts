@@ -5,34 +5,43 @@ import {
   disconnect as dbDisconnect,
 } from "./db/connection.js";
 import { logger, generateAndAttachRequestId } from "./logger.js";
-import scrapFeeCollected from "./handlers/scrap.js";
+import { scrapFeesCollected } from "./handlers/scrap.js";
 
 const main = async (): Promise<void> => {
   try {
     generateAndAttachRequestId();
-    logger.info("Beginning scrapFeeCollected job");
+    logger.info("Beginning scrapFeesCollected job");
     await dbConnect();
 
-    await scrapFeeCollected();
+    await scrapFeesCollected();
 
     await dbDisconnect();
-    logger.info("Completed scrapFeeCollected successfully");
+    logger.info("Completed scrapFeesCollected successfully");
     process.exit(0);
   } catch (error) {
-    logger.error("Cron job failed:", error);
+    // note: generally speaking, to avoid doubling error notifications, I like to let
+    // errors bubble up to the top and only logger.error with a notification from there.
+    // Hence why there's not many try/catch, except when there's a functional reason to them,
+    // e.g. logging last block parsed in the scrap handler.
+    await logger.error("Cron job failed:", error);
     process.exit(1);
   }
 };
 
 // handle kubernetes signals gracefully
-process.on("SIGTERM", () => {
-  logger.info("Cron job received SIGTERM, shutting down gracefully");
+process.on("SIGTERM", async () => {
+  await logger.alarm("Cron job received SIGTERM, shutting down gracefully", {});
   process.exit(0);
 });
 
-process.on("SIGINT", () => {
-  logger.info("Cron job received SIGINT, shutting down gracefully");
+process.on("SIGINT", async () => {
+  await logger.alarm("Cron job received SIGINT, shutting down gracefully", {});
   process.exit(0);
+});
+
+process.on("uncaughtException", async (err) => {
+  await logger.alarm("Process crashed because of an uncaughtException", err);
+  return;
 });
 
 const __filename = fileURLToPath(import.meta.url);

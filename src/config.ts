@@ -23,18 +23,7 @@ const getBoolean = (variable: any): boolean => {
   }
 };
 
-type Env = {
-  rpcUrl: string;
-  feeCollectorContractAddress: string;
-  // db
-  dbHost: string;
-  dbPort: number;
-  dbName: string;
-  dbUser: string;
-  dbPwd: string;
-};
-
-const getEnv = (): Env => ({
+export default {
   rpcUrl: getString("RPC_URL"),
   feeCollectorContractAddress: getString("FEE_COLLECTOR_CONTRACT_ADDRESS"),
   // db
@@ -43,8 +32,7 @@ const getEnv = (): Env => ({
   dbName: getString("DB_NAME"),
   dbUser: getString("DB_USER"),
   dbPwd: getString("DB_PWD"),
-});
-
-const env = getEnv();
-
-export default env;
+  // app
+  batchSize: 1000,
+  startBlock: 70_000_000,
+};

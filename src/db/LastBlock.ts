@@ -1,5 +1,7 @@
 import { getModelForClass, prop, modelOptions } from "@typegoose/typegoose";
 
+import { makeFuncRetriable } from "../retry.js";
+
 /*
  * Model intended to be created just once to store the most recent block parsed.
  */
@@ -11,13 +13,20 @@ class LastBlock {
 
 const LastBlockModel = getModelForClass(LastBlock);
 
-const getLastBlockInDb = async (): Promise<number | undefined> => {
+const _getLastBlockInDb = async (): Promise<number | undefined> => {
   return (await LastBlockModel.findOne({}))?.blockNb;
 };
 
-const setLastBlockInDb = async (newBlockNb: number): Promise<void> => {
-  // `upsert: true` to handle creation in first call
+const _setLastBlockInDb = async (newBlockNb: number): Promise<void> => {
+  // `upsert: true` to handle creation at the first call
   await LastBlockModel.updateOne({}, { blockNb: newBlockNb }, { upsert: true });
 };
 
-export { getLastBlockInDb, setLastBlockInDb };
+const getLastBlockInDb = makeFuncRetriable(_getLastBlockInDb);
+const setLastBlockInDb = makeFuncRetriable(_setLastBlockInDb);
+
+export {
+  getLastBlockInDb,
+  setLastBlockInDb,
+  LastBlockModel, // for tests else no direct operation with the model
+};

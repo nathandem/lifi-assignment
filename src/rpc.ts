@@ -25,7 +25,7 @@ const feeCollector = new ethers.Contract(
  * Just like its underlying `eth_getLogs` RPC method, queryFilter is inclusive of
  * both fromBlock and toBlock.
  */
-const _loadFeesCollectedEvents = async (
+const loadFeesCollectedEvents = async (
   fromBlock: BlockTag,
   toBlock: BlockTag
 ): Promise<ethers.Event[]> => {
@@ -33,12 +33,19 @@ const _loadFeesCollectedEvents = async (
   return await feeCollector.queryFilter(filter, fromBlock, toBlock);
 };
 
-const _getLatestBlockNumber = async (): Promise<number> => {
+const getLatestBlockNumber = async (): Promise<number> => {
   return await provider.getBlockNumber();
 };
 
 // retriable versions of RPC calls
-const loadFeesCollectedEvents = makeFuncRetriable(_loadFeesCollectedEvents);
-const getLatestBlockNumber = makeFuncRetriable(_getLatestBlockNumber);
+const retriableLoadFeesCollectedEvents = makeFuncRetriable(
+  loadFeesCollectedEvents
+);
+const retriableGetLatestBlockNumber = makeFuncRetriable(getLatestBlockNumber);
 
-export { loadFeesCollectedEvents, getLatestBlockNumber };
+export {
+  loadFeesCollectedEvents,
+  retriableLoadFeesCollectedEvents,
+  getLatestBlockNumber,
+  retriableGetLatestBlockNumber,
+};

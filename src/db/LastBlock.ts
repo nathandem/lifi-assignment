@@ -13,20 +13,22 @@ class LastBlock {
 
 const LastBlockModel = getModelForClass(LastBlock);
 
-const _getLastBlockInDb = async (): Promise<number | undefined> => {
+const getLastBlockInDb = async (): Promise<number | undefined> => {
   return (await LastBlockModel.findOne({}))?.blockNb;
 };
 
-const _setLastBlockInDb = async (newBlockNb: number): Promise<void> => {
+const setLastBlockInDb = async (newBlockNb: number): Promise<void> => {
   // `upsert: true` to handle creation at the first call
   await LastBlockModel.updateOne({}, { blockNb: newBlockNb }, { upsert: true });
 };
 
-const getLastBlockInDb = makeFuncRetriable(_getLastBlockInDb);
-const setLastBlockInDb = makeFuncRetriable(_setLastBlockInDb);
+const retriableGetLastBlockInDb = makeFuncRetriable(getLastBlockInDb);
+const retriableSetLastBlockInDb = makeFuncRetriable(setLastBlockInDb);
 
 export {
   getLastBlockInDb,
   setLastBlockInDb,
+  retriableGetLastBlockInDb,
+  retriableSetLastBlockInDb,
   LastBlockModel, // for tests else no direct operation with the model
 };

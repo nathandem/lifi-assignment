@@ -5,7 +5,7 @@ import {
   disconnect as dbDisconnect,
 } from "./db/connection.js";
 import { logger, generateAndAttachRequestId } from "./logger.js";
-import { scrapFeesCollected } from "./handlers/scrap.js";
+import { scrapFeesCollected } from "./services/scrap.js";
 
 const main = async (): Promise<void> => {
   try {
@@ -24,18 +24,21 @@ const main = async (): Promise<void> => {
     // Hence why there's not many try/catch, except when there's a functional reason to them,
     // e.g. logging last block parsed in the scrap handler.
     await logger.error("Cron job failed:", error);
+    await dbDisconnect();
     process.exit(1);
   }
 };
 
 // handle kubernetes signals gracefully
 process.on("SIGTERM", async () => {
-  await logger.alarm("Cron job received SIGTERM, shutting down gracefully", {});
+  await logger.alarm("Job received SIGTERM, shutting down gracefully", {});
+  await dbDisconnect();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
-  await logger.alarm("Cron job received SIGINT, shutting down gracefully", {});
+  await logger.alarm("Job received SIGINT, shutting down gracefully", {});
+  await dbDisconnect();
   process.exit(0);
 });
 

@@ -9,6 +9,7 @@ import {
 import { ParsedFeesCollectedEvent } from "../types.js";
 import { logger } from "../logger.js";
 import { makeFuncRetriable } from "../retry.js";
+import config from "../config.js";
 
 const DUPLICATE_KEY_ERROR = 11000;
 
@@ -16,9 +17,9 @@ const DUPLICATE_KEY_ERROR = 11000;
  * Represents a `FeesCollected` event, from the contact `FeeCollector`.
  *
  * Technical notes:
- * - txHash and blockNb are here for reliability and provide extra context about events ordering
+ * - blockNb, txHash and logIdx are here for reliability and provide extra context
  * - No validation performed as EVM events are high-level deterministic, highly constrained
- * - fees are stored as strings as mongodb doesn't offer integers above 64 bytes
+ * - Amounts are stored as strings as mongodb doesn't offer integers above 64 bytes
  */
 @index({ txHash: 1, logIdx: 1 }, { unique: true })
 @modelOptions({ schemaOptions: { collection: "fees" } })
@@ -55,7 +56,7 @@ const FeeModel = getModelForClass(Fee);
  * Inserts are idempotent. No replication of previously saved events and
  * no failure in case of multiple attempts.
  */
-const _saveFeesCollectedInDb = async (
+const saveFeesCollectedInDb = async (
   parsedFees: ParsedFeesCollectedEvent[]
 ): Promise<void> => {
   try {
@@ -74,15 +75,32 @@ const _saveFeesCollectedInDb = async (
   }
 };
 
-const _getFeesFromDb = async (): Promise<Fee[]> => {
-  return await FeeModel.find({});
-};
+/**
+ * Retriable version of saveFeesCollectedInDb, for use in cron-like services.
+ */
+const retriableSaveFeesCollectedInDb = makeFuncRetriable(saveFeesCollectedInDb);
 
-const saveFeesCollectedInDb = makeFuncRetriable(_saveFeesCollectedInDb);
-const getFeesFromDb = makeFuncRetriable(_getFeesFromDb);
+/**
+ * Get fees by integrator, paginated function
+ * @param integrator - Integrator to get FeesCollected from
+ * @param page - What page to receive
+ * @returns - Paged result of Fees for this integrator
+ */
+const getFeesByIntegrator = async (
+  integrator: string,
+  page: number
+): Promise<Fee[]> => {
+  const actualPage = page - 1;
+
+  return await FeeModel.find({ integrator })
+    .sort({ _id: 1 }) // reflect creation time
+    .limit(config.pageSize)
+    .skip(actualPage * config.pageSize);
+};
 
 export {
   saveFeesCollectedInDb,
-  getFeesFromDb,
+  retriableSaveFeesCollectedInDb,
+  getFeesByIntegrator,
   FeeModel, // for tests else no direct operation with the model
 };

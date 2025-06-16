@@ -1,9 +1,15 @@
 import { BigNumber, type Event } from "ethers";
 
 import { type ParsedFeesCollectedEvent } from "../types.js";
-import { loadFeesCollectedEvents, getLatestBlockNumber } from "../rpc.js";
-import { saveFeesCollectedInDb } from "../db/Fee.js";
-import { getLastBlockInDb, setLastBlockInDb } from "../db/LastBlock.js";
+import {
+  retriableLoadFeesCollectedEvents as loadFeesCollectedEvents,
+  retriableGetLatestBlockNumber as getLatestBlockNumber,
+} from "../rpc.js";
+import { retriableSaveFeesCollectedInDb as saveFeesCollectedInDb } from "../db/Fee.js";
+import {
+  retriableGetLastBlockInDb as getLastBlockInDb,
+  retriableSetLastBlockInDb as setLastBlockInDb,
+} from "../db/LastBlock.js";
 import { logger } from "../logger.js";
 import config from "../config.js";
 

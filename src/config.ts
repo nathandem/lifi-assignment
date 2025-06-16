@@ -32,7 +32,10 @@ export default {
   dbName: getString("DB_NAME"),
   dbUser: getString("DB_USER"),
   dbPwd: getString("DB_PWD"),
-  // app
+  // service
   batchSize: 1000,
   startBlock: 70_000_000,
+  // api
+  apiPort: 3000,
+  pageSize: 1000,
 };

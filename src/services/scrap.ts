@@ -54,7 +54,7 @@ const scrapFeesCollected = async (): Promise<void> => {
   // alternatively, we can fetch the latest block number in every loop pass
   const blockchainLatestBlock = await getLatestBlockNumber();
 
-  const BATCH_SIZE = config.batchSize - 1; // minus 1 because inclusive on both side would mean a batch size of N+1
+  const BATCH_SIZE = config.batchSize;
   let fromBlock = dbLastestBlock + 1;
 
   while (fromBlock <= blockchainLatestBlock) {

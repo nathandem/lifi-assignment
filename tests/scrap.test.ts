@@ -6,11 +6,15 @@ import { MongoMemoryServer } from "mongodb-memory-server-core";
 import { ethers as originalEthers } from "ethers";
 
 import config from "../src/config.js";
-import * as feeDb from "../src/db/Fee.js";
-import * as lastBlockDb from "../src/db/LastBlock.js";
+import { FeeModel, retriableSaveFeesCollectedInDb } from "../src/db/Fee.js";
+import {
+  getLastBlockInDb,
+  setLastBlockInDb,
+  LastBlockModel,
+} from "../src/db/LastBlock.js";
 import { testConnect, disconnect } from "../src/db/connection.js";
 import { type ParsedFeesCollectedEvent } from "../src/types.js";
-type ScapModule = typeof import("../src/handlers/scrap.js");
+type ScapModule = typeof import("../src/services/scrap.js");
 
 import { feesCollectedEventsFixtures } from "./fixtures.js";
 
@@ -31,27 +35,30 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
   });
 
   afterEach(async () => {
-    await feeDb.FeeModel.deleteMany({});
-    await lastBlockDb.LastBlockModel.deleteMany({});
+    await FeeModel.deleteMany({});
+    await LastBlockModel.deleteMany({});
   });
 
   test("First call to scrapFeesCollected should save FeesCollected events from startBlock till last current block number and store the last block number scrapped", async () => {
     // arrange
     const batchSize = 5;
-    const lastBlockOnChain = config.startBlock + batchSize;
+    const lastBlockOnChain = config.startBlock + batchSize - 1; // just one round
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (fromBlock: number, toBlock: number) =>
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
             feesCollectedEventsFixtures.filter(
               (event) =>
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             ),
-          getLatestBlockNumber: async () => lastBlockOnChain,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
         },
       },
       {
@@ -70,7 +77,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
 
     // assert
     // -> 1 FeesCollected event in the [70M;70M+5] range
-    const fees = await feeDb.getFeesFromDb();
+    const fees = await FeeModel.find({});
     assert.strictEqual(fees.length, 1);
     assert.strictEqual(
       fees[0].txHash,
@@ -98,7 +105,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     );
 
     // -> check new block number in DB
-    const lastBlockInDb = await lastBlockDb.getLastBlockInDb();
+    const lastBlockInDb = await getLastBlockInDb();
     assert.strictEqual(lastBlockInDb, lastBlockOnChain);
   });
 
@@ -106,20 +113,23 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     // arrange
     // first run -> saves 1 FeesCollected and LastBlock.blockNb
     const batchSize = 5;
-    const lastBlockOnChainFirstRun = config.startBlock + batchSize;
+    const lastBlockOnChainFirstRun = config.startBlock + batchSize - 1;
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (fromBlock: number, toBlock: number) =>
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
             feesCollectedEventsFixtures.filter(
               (event) =>
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             ),
-          getLatestBlockNumber: async () => lastBlockOnChainFirstRun,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChainFirstRun,
         },
       },
       {
@@ -132,23 +142,26 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
       }
     );
     await scrap.scrapFeesCollected();
-    const feesAfterFirstRun = await feeDb.getFeesFromDb();
+    const feesAfterFirstRun = await FeeModel.find({});
     assert.strictEqual(feesAfterFirstRun.length, 1);
 
     const lastBlockOnChainSecondRun = config.startBlock + 50;
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (fromBlock: number, toBlock: number) =>
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
             feesCollectedEventsFixtures.filter(
               (event) =>
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             ),
-          getLatestBlockNumber: async () => lastBlockOnChainSecondRun,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChainSecondRun,
         },
       },
       {
@@ -169,7 +182,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     // -> 2 FeesCollected event in the [70M+6;70M+50] range, so total of 3 records now
     // Note: event on 70M+6 is included as 1 block after previous getLastBlockInDb
     //       and events on block 70M+51 is not included as after getLatestBlockNumber
-    const feesAfterSecondRun = await feeDb.getFeesFromDb();
+    const feesAfterSecondRun = await FeeModel.find({});
     assert.strictEqual(feesAfterSecondRun.length, 3);
 
     assert.strictEqual(
@@ -186,7 +199,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     );
 
     // -> check new block number in DB
-    const newLastBlockInDb = await lastBlockDb.getLastBlockInDb();
+    const newLastBlockInDb = await getLastBlockInDb();
     assert.strictEqual(newLastBlockInDb, lastBlockOnChainSecondRun);
   });
 
@@ -194,18 +207,18 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     // arrange
     const batchSize = 5;
     const initialLastBlockInDb = config.startBlock + 50;
-    await lastBlockDb.setLastBlockInDb(initialLastBlockInDb);
+    await setLastBlockInDb(initialLastBlockInDb);
     const lastBlockOnChain = config.startBlock + 100;
     const rpcFailingAfterBlock = config.startBlock + 72;
 
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (
+          retriableLoadFeesCollectedEvents: async (
             fromBlock: number,
             toBlock: number
           ) => {
@@ -220,7 +233,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             );
           },
-          getLatestBlockNumber: async () => lastBlockOnChain,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
         },
       },
       {
@@ -239,12 +252,11 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
 
     // assert
     // -> 2 FeesCollected events stored
-    const fees = await feeDb.getFeesFromDb();
+    const fees = await FeeModel.find({});
     assert.strictEqual(fees.length, 2); // events at block nb 51 and 70
 
     // -> LastBlock.blockNb updated to nb at beginning of the relevant batch run
-    const lastBlockInDbAfterCrash =
-      (await lastBlockDb.getLastBlockInDb()) as number;
+    const lastBlockInDbAfterCrash = (await getLastBlockInDb()) as number;
     assert(lastBlockInDbAfterCrash < lastBlockOnChain);
     assert(lastBlockInDbAfterCrash < rpcFailingAfterBlock);
 
@@ -260,28 +272,31 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     // arrange
     const batchSize = 5;
     const initialLastBlockInDb = config.startBlock + 50;
-    await lastBlockDb.setLastBlockInDb(initialLastBlockInDb);
+    await setLastBlockInDb(initialLastBlockInDb);
     const lastBlockOnChain = config.startBlock + 100;
     const dbFailingAfterBlock = config.startBlock + 55;
 
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (fromBlock: number, toBlock: number) =>
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
             feesCollectedEventsFixtures.filter(
               (event) =>
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             ),
-          getLatestBlockNumber: async () => lastBlockOnChain,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
         },
         "../src/db/Fee.js": {
           // correctly work to get lastBlockInDb and save events at config.startBlock + 51
           // and config.startBlock + 70 but fail after
-          saveFeesCollectedInDb: async (
+          retriableSaveFeesCollectedInDb: async (
             parsedEvents: ParsedFeesCollectedEvent[]
           ) => {
             if (
@@ -290,7 +305,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
             ) {
               await disconnect();
             }
-            await feeDb.saveFeesCollectedInDb(parsedEvents);
+            await retriableSaveFeesCollectedInDb(parsedEvents);
           },
         },
       },
@@ -312,54 +327,52 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     await testConnect(mongoUri); // reconnect first
 
     // -> 2 FeesCollected events stored
-    const fees = await feeDb.getFeesFromDb();
+    const fees = await FeeModel.find({});
     assert.strictEqual(fees.length, 1); // events at block 51
 
     // -> LastBlock.blockNb same as beginning of the run
-    const lastBlockInDbAfterCrash =
-      (await lastBlockDb.getLastBlockInDb()) as number;
+    const lastBlockInDbAfterCrash = (await getLastBlockInDb()) as number;
     assert.strictEqual(lastBlockInDbAfterCrash, initialLastBlockInDb);
   });
 
-  test("Call to scrapFeesCollected on narrow gaps should not missed events", async () => {
-    // TODO: same block
-    // TODO: just 1 extra block
-  });
-
-  test("Call to scrapFeesCollected should not fail when exposed to FeesCollected events previously saved (because of previous failure)", async () => {
+  test("Call to scrapFeesCollected on same block should not result in any DB change", async () => {
     // arrange
-    // -> start at block startBlock+50 and with 1 event from block 51
+    // -> start at block startBlock+50 and with the event from block 50
     const batchSize = 5;
-    const initialLastBlockInDb = config.startBlock + 50;
-    await lastBlockDb.setLastBlockInDb(initialLastBlockInDb);
+    const currentBlock = config.startBlock + 50; // both in DB and on-chain
+    await setLastBlockInDb(currentBlock);
 
-    const correctMockedFeesCollectedEvent = feesCollectedEventsFixtures.find(
-      (event) => event.blockNumber === config.startBlock + 51
+    const block50Event = feesCollectedEventsFixtures.find(
+      (event) => event.blockNumber === config.startBlock + 50
     )!;
-    await feeDb.FeeModel.insertOne({
-      txHash: correctMockedFeesCollectedEvent.transactionHash,
-      blockNb: correctMockedFeesCollectedEvent.blockNumber,
-      token: correctMockedFeesCollectedEvent.args._token,
-      integrator: correctMockedFeesCollectedEvent.args._integrator,
-      integratorFee: correctMockedFeesCollectedEvent.args._integratorFee,
-      lifiFee: correctMockedFeesCollectedEvent.args._lifiFee,
+    await FeeModel.insertOne({
+      txHash: block50Event.transactionHash,
+      blockNb: block50Event.blockNumber,
+      logIdx: block50Event.logIndex,
+      token: block50Event.args._token,
+      integrator: block50Event.args._integrator,
+      integratorFee: block50Event.args._integratorFee,
+      lifiFee: block50Event.args._lifiFee,
     });
-
-    const lastBlockOnChain = config.startBlock + 100;
+    const feesEventsBeforeRun = await FeeModel.find({});
+    assert.strictEqual(feesEventsBeforeRun.length, 1);
 
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
-          loadFeesCollectedEvents: async (fromBlock: number, toBlock: number) =>
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
             feesCollectedEventsFixtures.filter(
               (event) =>
                 event.blockNumber >= fromBlock && event.blockNumber <= toBlock
             ),
-          getLatestBlockNumber: async () => lastBlockOnChain,
+          retriableGetLatestBlockNumber: async () => currentBlock,
         },
       },
       {
@@ -377,11 +390,138 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     await scrap.scrapFeesCollected();
 
     // assert
-    const feesEventsAfterRun = await feeDb.getFeesFromDb();
+    const feesEventsAfterRun = await FeeModel.find({});
+    assert.strictEqual(feesEventsAfterRun.length, 1);
+
+    // -> check new block number in DB
+    const newLastBlockInDb = await getLastBlockInDb();
+    assert.strictEqual(newLastBlockInDb, currentBlock);
+  });
+
+  test("Call to scrapFeesCollected on narrow gaps (one block after) should not missed events", async () => {
+    // arrange
+    // -> start at block startBlock+50 and with the event from block 50
+    const batchSize = 5;
+    const initialLastBlockInDb = config.startBlock + 50;
+    await setLastBlockInDb(initialLastBlockInDb);
+    const lastBlockOnChain = config.startBlock + 51;
+
+    const block50Event = feesCollectedEventsFixtures.find(
+      (event) => event.blockNumber === config.startBlock + 50
+    )!;
+    await FeeModel.insertOne({
+      txHash: block50Event.transactionHash,
+      blockNb: block50Event.blockNumber,
+      logIdx: block50Event.logIndex,
+      token: block50Event.args._token,
+      integrator: block50Event.args._integrator,
+      integratorFee: block50Event.args._integratorFee,
+      lifiFee: block50Event.args._lifiFee,
+    });
+    const feesEventsBeforeRun = await FeeModel.find({});
+    assert.strictEqual(feesEventsBeforeRun.length, 1);
+
+    scrap = await esmock(
+      "../src/services/scrap.js",
+      {
+        "../src/config.js": {
+          batchSize,
+        },
+        "../src/rpc.js": {
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
+            feesCollectedEventsFixtures.filter(
+              (event) =>
+                event.blockNumber >= fromBlock && event.blockNumber <= toBlock
+            ),
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
+        },
+      },
+      {
+        // turn off logging globally
+        "../src/logger.js": {
+          logger: {
+            debug: () => {},
+            info: () => {},
+          },
+        },
+      }
+    );
+
+    // act
+    await scrap.scrapFeesCollected();
+
+    // assert
+    const feesEventsAfterRun = await FeeModel.find({});
+    assert.strictEqual(feesEventsAfterRun.length, 2); // events from startBlock+50 and startBlock+51
+
+    // -> check new block number in DB
+    const newLastBlockInDb = await getLastBlockInDb();
+    assert.strictEqual(newLastBlockInDb, lastBlockOnChain);
+  });
+
+  test("Call to scrapFeesCollected should not fail when exposed to FeesCollected events previously saved (because of previous failure)", async () => {
+    // arrange
+    // -> start at block startBlock+50 and with 1 event from block 51
+    const batchSize = 5;
+    const initialLastBlockInDb = config.startBlock + 50;
+    await setLastBlockInDb(initialLastBlockInDb);
+
+    const correctMockedFeesCollectedEvent = feesCollectedEventsFixtures.find(
+      (event) => event.blockNumber === config.startBlock + 51
+    )!;
+    await FeeModel.insertOne({
+      txHash: correctMockedFeesCollectedEvent.transactionHash,
+      blockNb: correctMockedFeesCollectedEvent.blockNumber,
+      logIdx: correctMockedFeesCollectedEvent.logIndex,
+      token: correctMockedFeesCollectedEvent.args._token,
+      integrator: correctMockedFeesCollectedEvent.args._integrator,
+      integratorFee: correctMockedFeesCollectedEvent.args._integratorFee,
+      lifiFee: correctMockedFeesCollectedEvent.args._lifiFee,
+    });
+
+    const lastBlockOnChain = config.startBlock + 100;
+
+    scrap = await esmock(
+      "../src/services/scrap.js",
+      {
+        "../src/config.js": {
+          batchSize,
+        },
+        "../src/rpc.js": {
+          retriableLoadFeesCollectedEvents: async (
+            fromBlock: number,
+            toBlock: number
+          ) =>
+            feesCollectedEventsFixtures.filter(
+              (event) =>
+                event.blockNumber >= fromBlock && event.blockNumber <= toBlock
+            ),
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
+        },
+      },
+      {
+        // turn off logging globally
+        "../src/logger.js": {
+          logger: {
+            debug: () => {},
+            info: () => {},
+          },
+        },
+      }
+    );
+
+    // act
+    await scrap.scrapFeesCollected();
+
+    // assert
+    const feesEventsAfterRun = await FeeModel.find({});
     assert.strictEqual(feesEventsAfterRun.length, 2); // events at block startBlock+51 and startBlock+70
 
     // -> check new block number in DB
-    const newLastBlockInDb = await lastBlockDb.getLastBlockInDb();
+    const newLastBlockInDb = await getLastBlockInDb();
     assert.strictEqual(newLastBlockInDb, lastBlockOnChain);
   });
 
@@ -391,7 +531,7 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     // arrange
     const batchSize = 5;
     const initialLastBlockInDb = config.startBlock + 50;
-    await lastBlockDb.setLastBlockInDb(initialLastBlockInDb);
+    await setLastBlockInDb(initialLastBlockInDb);
     const lastBlockOnChain = config.startBlock + 100;
 
     let rpcErrorOccurred = false;
@@ -451,14 +591,14 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     });
 
     scrap = await esmock(
-      "../src/handlers/scrap.js",
+      "../src/services/scrap.js",
       {
         "../src/config.js": {
           batchSize,
         },
         "../src/rpc.js": {
           ...mockedRpcModule,
-          getLatestBlockNumber: async () => lastBlockOnChain,
+          retriableGetLatestBlockNumber: async () => lastBlockOnChain,
         },
       },
       {
@@ -480,12 +620,11 @@ describe("Scrap FeesCollected events", { concurrency: 1 }, async () => {
     assert.strictEqual(rpcErrorOccurred, true);
 
     // -> 2 FeesCollected events stored
-    const fees = await feeDb.getFeesFromDb();
+    const fees = await FeeModel.find({});
     assert.strictEqual(fees.length, 2); // events at block nb 51 and 70
 
     // -> LastBlock.blockNb updated to nb at beginning of the relevant batch run
-    const lastBlockInDbAfterRun =
-      (await lastBlockDb.getLastBlockInDb()) as number;
+    const lastBlockInDbAfterRun = (await getLastBlockInDb()) as number;
     assert.strictEqual(lastBlockInDbAfterRun, lastBlockOnChain);
   });
 });

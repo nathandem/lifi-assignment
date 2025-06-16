@@ -16,21 +16,22 @@ const feesQuerySchema = Joi.object<IFeesQuery>({
 });
 
 const setupRoutes = (app: express.Express) => {
-  app.get("/health", (req, res) => {
-    res.json({
-      status: "healthy",
-      service: "FeesCollectedApi",
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  // Potential improvements:
-  // - logic of some rest api endpoints could be moved under services/ as logic grows
-  // - authentication
-  // - rate limit, but maybe preferrable outside the app itself
-  // - requestId of some sort
-  // - more robust, integrated error handling -> specific error per queryparam, error code
-  // - depending on execution environment, health check
+  /**
+   * Returns the key info of FeesCollected events related to an integrator.
+   *
+   * Expected queryparams:
+   * - address: ethereum address of the integrator
+   * - page: page to receive (api uses pagination)
+   *
+   * Potential improvements:
+   * - logic of the endpoint could be moved under services/, especially if the
+   *   logic grows in complexity
+   * - authentication
+   * - rate limit, but maybe preferrable outside the app itself
+   * - requestId of some sort
+   * - more robust, integrated error handling -> specific error per queryparam, error code enum
+   * - depending on execution environment, health check
+   */
   app.get("/fees", async (req: express.Request, res: express.Response) => {
     try {
       const { error, value } = feesQuerySchema.validate(req.query);

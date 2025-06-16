@@ -44,14 +44,14 @@ const parseFeeCollectorEvents = (
  * contract. Job proceeds where the last valid block it left of.
  *
  * @remarks
- * Could be made parallel to increase speed, but reliability preferred.
+ * Could be made parallel to increase speed, but reliability is preferred.
  */
 const scrapFeesCollected = async (): Promise<void> => {
   const dbLastestBlock =
     (await getLastBlockInDb()) || Math.max(config.startBlock - 1, 0);
 
-  // We might be missing a few blocks because of this by the time the job is done but okay, as not a real-time service
-  // alternatively, we can fetch the latest block number in every loop pass
+  // We might be missing a few blocks because of this by the time the job is done but okay, as not a real-time service.
+  // Alternatively, we could fetch the latest block number in every loop pass.
   const blockchainLatestBlock = await getLatestBlockNumber();
 
   const BATCH_SIZE = config.batchSize;

@@ -6,7 +6,6 @@
   "scripts": {
     "prebuild": "rm -rf dist",
     "build": "tsc",
-    "postbuild": "echo todo",
     "test": "npx tsx --env-file=./tests/.env.test --test",
     "scrap": "npx tsx --env-file=.env src/service.ts",
     "api": "npx tsx --env-file=.env src/api.ts"

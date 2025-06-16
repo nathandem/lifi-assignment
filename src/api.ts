@@ -13,19 +13,8 @@ import config from "./config.js";
 
 let _server: http.Server;
 
-const main = async (): Promise<void> => {
-  await dbConnect();
-
-  const app = express();
-
-  app.use(express.json());
-
-  setupRoutes(app);
-
-  _server = app.listen(config.apiPort, "0.0.0.0", () => {
-    logger.info(`API server started on port ${config.apiPort}`);
-  });
-};
+const app = express();
+setupRoutes(app);
 
 const shutdown = async () => {
   logger.info("API server shutting down...");
@@ -46,5 +35,10 @@ process.on("uncaughtException", async (err) => {
 
 const __filename = fileURLToPath(import.meta.url);
 if (process.argv[1] === __filename) {
-  main();
+  await dbConnect();
+  _server = app.listen(config.apiPort, "0.0.0.0", () => {
+    logger.info(`API server started on port ${config.apiPort}`);
+  });
 }
+
+export { app };

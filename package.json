@@ -8,7 +8,8 @@
     "build": "tsc",
     "postbuild": "echo todo",
     "test": "npx tsx --env-file=./tests/.env.test --test",
-    "scrap": "npx tsx --env-file=.env src/service.ts"
+    "scrap": "npx tsx --env-file=.env src/service.ts",
+    "api": "npx tsx --env-file=.env src/api.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,8 +18,10 @@
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^22.15.31",
+    "@types/supertest": "^6.0.3",
     "esmock": "^2.7.0",
     "mongodb-memory-server-core": "^10.1.4",
+    "supertest": "^7.1.1",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   },

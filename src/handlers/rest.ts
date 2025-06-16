@@ -29,19 +29,14 @@ const setupRoutes = (app: express.Express) => {
   // - authentication
   // - rate limit, but maybe preferrable outside the app itself
   // - requestId of some sort
-  // - more robust, integrated error handling
+  // - more robust, integrated error handling -> specific error per queryparam, error code
   // - depending on execution environment, health check
   app.get("/fees", async (req: express.Request, res: express.Response) => {
     try {
       const { error, value } = feesQuerySchema.validate(req.query);
       if (error) {
         res.status(400).json({
-          success: false,
           error: "Invalid query parameters",
-          details: error.details.map((detail) => ({
-            field: detail.path.join("."),
-            message: detail.message,
-          })),
         });
         return;
       }
